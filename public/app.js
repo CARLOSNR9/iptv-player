@@ -236,7 +236,9 @@ function playStreamById(streamId) {
   loadEpgForStream(streamId);
 
   // Stream (HLS NO soporta headers → key por query)
-  const streamURL = `/api/stream/${streamId}?key=${encodeURIComponent(APP_KEY)}`;
+  
+  const streamURL = `https://zona593.live:8443/live/9R5bVzVKVz/eGWMYNHUcv/${streamId}.m3u8`;
+
 
   if (Hls.isSupported()) {
     if (hls) hls.destroy();

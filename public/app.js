@@ -149,7 +149,7 @@ function renderChannels(channels) {
 }
 
 /* =========================
-   EPG — DECODIFICACIÓN PRO
+   EPG — DECODER IPTV EPG (PRO, FINAL)
 ========================= */
 
 function decodeEPG(text) {
@@ -157,16 +157,27 @@ function decodeEPG(text) {
 
   let result = text.trim();
 
-  for (let i = 0; i < 2; i++) {
-    try {
-      if (/^[A-Za-z0-9+/=]+$/.test(result) && result.length % 4 === 0) {
-        result = atob(result);
-      }
-    } catch {
-      break;
+  // 1️⃣ Intentar Base64 (normal y URL-safe)
+  try {
+    const base64 = result
+      .replace(/-/g, "+")
+      .replace(/_/g, "/");
+
+    if (/^[A-Za-z0-9+/=]+$/.test(base64)) {
+      const binary = atob(base64);
+
+      // 2️⃣ Convertir Latin1 → UTF-8
+      result = decodeURIComponent(
+        Array.prototype.map.call(binary, c =>
+          "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2)
+        ).join("")
+      );
     }
+  } catch {
+    // si falla, seguimos con el texto original
   }
 
+  // 3️⃣ Limpieza final
   return result
     .replace(/\u0000/g, "")
     .replace(/\s+/g, " ")
@@ -176,10 +187,7 @@ function decodeEPG(text) {
 function fmtTime(epochSeconds) {
   if (!epochSeconds) return "";
   const d = new Date(epochSeconds * 1000);
-  return d.toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit"
-  });
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function setEpgLoading() {
@@ -199,6 +207,7 @@ function renderEpg(items) {
   epgNowNext.innerHTML = items.slice(0, 5).map(it => {
     const title = decodeEPG(it.title || it.name || "");
     const desc  = decodeEPG(it.description || "");
+
     const start = fmtTime(it.start_timestamp || it.start);
     const end   = fmtTime(it.stop_timestamp || it.end);
 
@@ -216,7 +225,10 @@ function loadEpgForStream(streamId) {
   setEpgLoading();
   apiFetch(`/api/epg/${streamId}`)
     .then(r => r.json())
-    .then(data => renderEpg(data.epg_listings || []))
+    .then(data => {
+      const items = data?.epg_listings || data?.epg_list || data?.listings || [];
+      renderEpg(Array.isArray(items) ? items : []);
+    })
     .catch(() => setEpgEmpty());
 }
 
@@ -283,7 +295,7 @@ favToggle.addEventListener("click", () => {
   if (exists) {
     favs = favs.filter(f => f.stream_id != id);
   } else {
-    const ch = allChannels.find(c => c.stream_id == id);
+    const ch = allChannels.find(c => c.stream_id == id) || currentChannels.find(c => c.stream_id == id);
     if (ch) favs.push({ stream_id: ch.stream_id, name: ch.name });
   }
 

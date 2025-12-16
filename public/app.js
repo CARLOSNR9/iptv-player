@@ -149,8 +149,38 @@ function renderChannels(channels) {
 }
 
 /* =========================
-   EPG
+   EPG — DECODIFICACIÓN PRO
 ========================= */
+
+function decodeEPG(text) {
+  if (!text || typeof text !== "string") return "";
+
+  let result = text.trim();
+
+  for (let i = 0; i < 2; i++) {
+    try {
+      if (/^[A-Za-z0-9+/=]+$/.test(result) && result.length % 4 === 0) {
+        result = atob(result);
+      }
+    } catch {
+      break;
+    }
+  }
+
+  return result
+    .replace(/\u0000/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function fmtTime(epochSeconds) {
+  if (!epochSeconds) return "";
+  const d = new Date(epochSeconds * 1000);
+  return d.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
 
 function setEpgLoading() {
   epgNowNext.textContent = "Cargando guía (EPG)...";
@@ -166,12 +196,20 @@ function renderEpg(items) {
     return;
   }
 
-  epgNowNext.innerHTML = items.slice(0, 5).map(it => `
-    <div class="epg-item">
-      <div class="epg-title">${it.title || it.name || "Sin título"}</div>
-      <div class="epg-time">${new Date(it.start_timestamp * 1000).toLocaleString()}</div>
-    </div>
-  `).join("");
+  epgNowNext.innerHTML = items.slice(0, 5).map(it => {
+    const title = decodeEPG(it.title || it.name || "");
+    const desc  = decodeEPG(it.description || "");
+    const start = fmtTime(it.start_timestamp || it.start);
+    const end   = fmtTime(it.stop_timestamp || it.end);
+
+    return `
+      <div class="epg-item">
+        <div class="epg-title">${title || "Sin título"}</div>
+        <div class="epg-time">${start}${end ? " – " + end : ""}</div>
+        ${desc ? `<div class="epg-desc">${desc}</div>` : ""}
+      </div>
+    `;
+  }).join("");
 }
 
 function loadEpgForStream(streamId) {
@@ -189,7 +227,6 @@ function loadEpgForStream(streamId) {
 function playStreamById(streamId) {
   if (!streamId) return;
 
-  // Favoritos
   const isFav = getFavorites().some(f => f.stream_id == streamId);
   favToggle.textContent = isFav ? "⭐ Quitar de favoritos" : "⭐ Añadir a favoritos";
 
@@ -221,7 +258,9 @@ searchInput.addEventListener("input", () => {
   searchTimer = setTimeout(() => {
     const q = searchInput.value.toLowerCase();
     renderChannels(
-      q ? allChannels.filter(c => c.name.toLowerCase().includes(q)) : currentChannels
+      q
+        ? allChannels.filter(c => (c.name || "").toLowerCase().includes(q))
+        : currentChannels
     );
   }, 150);
 });
@@ -258,11 +297,10 @@ favList.addEventListener("change", () => {
 });
 
 /* =========================
-   INIT
+   INIT + PWA
 ========================= */
 
 renderFavorites();
-
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {

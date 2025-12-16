@@ -32,24 +32,30 @@ app.use(express.static("public"));
 ========================= */
 
 app.use("/api", (req, res, next) => {
-  // Si no configuraste APP_KEY, mejor bloquear para evitar publicar abierto
+  // Si no hay APP_KEY configurada → bloquear
   if (!APP_KEY) {
     return res.status(500).json({
-      error: "APP_KEY no configurada en el servidor (define APP_KEY en .env)"
+      error: "APP_KEY no configurada en el servidor"
     });
   }
 
-  const keyFromHeader = req.header("X-APP-KEY");
-  const keyFromQuery = req.query.key; // para /api/stream/:id?key=...
+  // 🔓 Permitir llamadas internas (frontend servido por Express)
+  const origin = req.get("origin");
+  if (!origin) {
+    return next();
+  }
 
+  const keyFromHeader = req.header("X-APP-KEY");
+  const keyFromQuery = req.query.key; // para HLS
   const key = keyFromHeader || keyFromQuery;
 
-  if (!key || key !== APP_KEY) {
+  if (key !== APP_KEY) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
   next();
 });
+
 
 /* =========================
    HELPERS

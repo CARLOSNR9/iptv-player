@@ -126,10 +126,33 @@ app.get("/api/epg/:streamId", async (req, res) => {
 });
 
 // Stream proxy (redirect)
-app.get("/api/stream/:streamId", (req, res) => {
-  const streamURL = `${IPTV_SERVER}/live/${IPTV_USER}/${IPTV_PASS}/${req.params.streamId}.m3u8`;
-  res.redirect(streamURL);
+app.get("/api/stream/:streamId", async (req, res) => {
+  try {
+    const streamURL = `${IPTV_SERVER}/live/${IPTV_USER}/${IPTV_PASS}/${req.params.streamId}.m3u8`;
+
+    const response = await fetch(streamURL, {
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "*/*"
+      }
+    });
+
+    if (!response.ok) {
+      return res.status(502).send("Error obteniendo stream");
+    }
+
+    // Copiar headers importantes
+    res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
+    res.setHeader("Cache-Control", "no-cache");
+
+    // 🔥 Stream directo (pipe)
+    response.body.pipe(res);
+  } catch (err) {
+    console.error("Error proxy stream:", err);
+    res.status(500).send("Error proxy stream");
+  }
 });
+
 
 app.listen(PORT, () => {
   console.log(`✅ Backend IPTV activo en http://localhost:${PORT}`);

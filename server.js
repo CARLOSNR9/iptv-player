@@ -41,7 +41,7 @@ app.use("/api", (req, res, next) => {
     });
   }
 
-  // Permitir llamadas internas (assets, navegación directa)
+  // Permitir llamadas internas (navegación directa / assets)
   const origin = req.get("origin");
   if (!origin) return next();
 
@@ -86,7 +86,7 @@ app.get("/api/categories", async (req, res) => {
 // Canales (global)
 app.get("/api/channels", async (req, res) => {
   try {
-    const r =  await fetch(iptvURL({ action: "get_live_streams" }));
+    const r = await fetch(iptvURL({ action: "get_live_streams" }));
     res.json(await r.json());
   } catch {
     res.status(500).json({ error: "Error cargando canales" });
@@ -108,7 +108,10 @@ app.get("/api/channels/:categoryId", async (req, res) => {
   }
 });
 
-// EPG
+/* =========================================================
+   ✅ EPG — FIX UTF-8 DEFINITIVO
+========================================================= */
+
 app.get("/api/epg/:streamId", async (req, res) => {
   try {
     const r = await fetch(
@@ -116,10 +119,24 @@ app.get("/api/epg/:streamId", async (req, res) => {
         action: "get_short_epg",
         stream_id: req.params.streamId,
         limit: 10
-      })
+      }),
+      {
+        headers: {
+          "Accept": "application/json; charset=utf-8"
+        }
+      }
     );
-    res.json(await r.json());
-  } catch {
+
+    // 🔥 FORZAR UTF-8 REAL
+    const buffer = await r.arrayBuffer();
+    const text = new TextDecoder("utf-8").decode(buffer);
+    const json = JSON.parse(text);
+
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.json(json);
+
+  } catch (e) {
+    console.error("EPG error:", e);
     res.status(500).json({ error: "Error cargando EPG" });
   }
 });
@@ -197,7 +214,6 @@ app.get("/api/hls", async (req, res) => {
     if (ct) res.setHeader("Content-Type", ct);
 
     res.setHeader("Cache-Control", "no-store");
-
     r.body.pipe(res);
 
   } catch (err) {

@@ -1,4 +1,24 @@
 /* =========================
+   APP KEY (DEBE COINCIDIR CON RENDER)
+========================= */
+
+const APP_KEY = "mi_clave_super_secreta_123";
+
+/* =========================
+   FETCH SEGURO
+========================= */
+
+function apiFetch(url, options = {}) {
+  return fetch(url, {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      "X-APP-KEY": APP_KEY
+    }
+  });
+}
+
+/* =========================
    DOM
 ========================= */
 
@@ -55,7 +75,7 @@ function renderFavorites() {
    CARGAR CATEGORÍAS
 ========================= */
 
-fetch("/api/categories")
+apiFetch("/api/categories")
   .then(res => res.json())
   .then(categories => {
     categories.forEach(cat => {
@@ -71,7 +91,7 @@ fetch("/api/categories")
    CARGAR TODOS LOS CANALES
 ========================= */
 
-fetch("/api/channels")
+apiFetch("/api/channels")
   .then(res => res.json())
   .then(channels => {
     allChannels = channels;
@@ -97,7 +117,7 @@ categoryList.addEventListener("change", () => {
     return;
   }
 
-  fetch(`/api/channels/${categoryId}`)
+  apiFetch(`/api/channels/${categoryId}`)
     .then(res => res.json())
     .then(channels => {
       currentChannels = channels;
@@ -184,7 +204,7 @@ function renderEpg(items) {
 function loadEpgForStream(streamId) {
   setEpgLoading();
 
-  fetch(`/api/epg/${streamId}`)
+  apiFetch(`/api/epg/${streamId}`)
     .then(r => r.json())
     .then(data => {
       const items =
@@ -215,8 +235,8 @@ function playStreamById(streamId) {
   // EPG
   loadEpgForStream(streamId);
 
-  // Stream
-  const streamURL = `/api/stream/${streamId}`;
+  // Stream (HLS NO soporta headers → key por query)
+  const streamURL = `/api/stream/${streamId}?key=${encodeURIComponent(APP_KEY)}`;
 
   if (Hls.isSupported()) {
     if (hls) hls.destroy();
@@ -282,7 +302,6 @@ favToggle.addEventListener("click", () => {
     favs = favs.filter(f => f.stream_id != streamId);
     favToggle.textContent = "⭐ Añadir a favoritos";
 
-    // limpiar selección si coincide
     if (favList.value == streamId) {
       favList.value = "";
     }
@@ -292,16 +311,9 @@ favToggle.addEventListener("click", () => {
   }
 
   saveFavorites(favs);
-
-  // 🔥 CLAVE: resetear select antes de render
   favList.value = "";
   renderFavorites();
 });
-
-
-
-
-
 
 favList.addEventListener("change", () => {
   playStreamById(favList.value);

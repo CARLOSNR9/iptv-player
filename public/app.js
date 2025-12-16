@@ -19,16 +19,39 @@ function apiFetch(url, options = {}) {
 }
 
 /* =========================
+   EVENTOS — CATEGORÍAS DINÁMICAS
+========================= */
+
+const EVENT_CATEGORY_KEYWORDS = [
+  "EVENTOS",
+  "PPV",
+  "DISNEY",
+  "UFC",
+  "BOX",
+  "WWE",
+  "NAVIDAD"
+];
+
+function isEventCategory(name = "") {
+  const n = name.toUpperCase();
+  return EVENT_CATEGORY_KEYWORDS.some(k => n.includes(k));
+}
+
+const categoriesMap = {}; // category_id -> category_name
+
+/* =========================
    DOM
 ========================= */
 
 const categoryList = document.getElementById("categoryList");
 const channelList = document.getElementById("channelList");
+const reloadCategoriesBtn = document.getElementById("reloadCategoriesBtn");
+
 const video = document.getElementById("video");
 const searchInput = document.getElementById("searchInput");
 const epgNowNext = document.getElementById("epgNowNext");
 
-/* ⭐ Favoritos DOM */
+/* ⭐ Favoritos */
 const favToggle = document.getElementById("favToggle");
 const favList = document.getElementById("favList");
 
@@ -72,22 +95,71 @@ function renderFavorites() {
 }
 
 /* =========================
-   CARGAR CATEGORÍAS
+   CARGAR CATEGORÍAS (INICIAL)
 ========================= */
 
-apiFetch("/api/categories")
-  .then(r => r.json())
-  .then(categories => {
-    categories.forEach(cat => {
-      const option = document.createElement("option");
-      option.value = cat.category_id;
-      option.textContent = cat.category_name;
-      categoryList.appendChild(option);
-    });
-  });
+function loadCategories() {
+  apiFetch("/api/categories")
+    .then(r => r.json())
+    .then(categories => {
+      categoryList.innerHTML = '<option value="">Todas las categorías</option>';
+      Object.keys(categoriesMap).forEach(k => delete categoriesMap[k]);
+
+      categories.forEach(cat => {
+        categoriesMap[cat.category_id] = cat.category_name;
+
+        const option = document.createElement("option");
+        option.value = cat.category_id;
+        option.textContent = cat.category_name;
+        categoryList.appendChild(option);
+      });
+    })
+    .catch(err => console.error("Error cargando categorías", err));
+}
+
+loadCategories();
 
 /* =========================
-   CARGAR TODOS LOS CANALES
+   🔄 RECARGAR SOLO CATEGORÍAS
+========================= */
+
+function reloadCategories() {
+  const previousCategory = categoryList.value;
+
+  categoryList.innerHTML =
+    '<option value="">Recargando categorías...</option>';
+
+  apiFetch(`/api/categories?refresh=${Date.now()}`)
+    .then(res => res.json())
+    .then(categories => {
+      categoryList.innerHTML =
+        '<option value="">Todas las categorías</option>';
+
+      Object.keys(categoriesMap).forEach(k => delete categoriesMap[k]);
+
+      categories.forEach(cat => {
+        categoriesMap[cat.category_id] = cat.category_name;
+
+        const option = document.createElement("option");
+        option.value = cat.category_id;
+        option.textContent = cat.category_name;
+        categoryList.appendChild(option);
+      });
+
+      if (previousCategory && categoriesMap[previousCategory]) {
+        categoryList.value = previousCategory;
+      }
+    })
+    .catch(err => {
+      console.error("Error recargando categorías", err);
+      alert("No se pudieron recargar las categorías");
+    });
+}
+
+reloadCategoriesBtn.addEventListener("click", reloadCategories);
+
+/* =========================
+   CARGAR TODOS LOS CANALES (CACHE GLOBAL)
 ========================= */
 
 apiFetch("/api/channels")
@@ -99,11 +171,12 @@ apiFetch("/api/channels")
   });
 
 /* =========================
-   CARGAR CANALES POR CATEGORÍA
+   CARGA POR CATEGORÍA (EVENTOS PRO)
 ========================= */
 
 categoryList.addEventListener("change", () => {
   const categoryId = categoryList.value;
+  const categoryName = categoriesMap[categoryId] || "";
 
   channelList.innerHTML = '<option value="">Selecciona un canal</option>';
   searchInput.value = "";
@@ -115,12 +188,22 @@ categoryList.addEventListener("change", () => {
     return;
   }
 
-  apiFetch(`/api/channels/${categoryId}`)
-    .then(r => r.json())
-    .then(channels => {
-      currentChannels = channels;
-      renderChannels(channels);
-    });
+  const isEvent = isEventCategory(categoryName);
+
+  if (isEvent) {
+    apiFetch(`/api/channels/${categoryId}?t=${Date.now()}`)
+      .then(r => r.json())
+      .then(channels => {
+        currentChannels = channels;
+        renderChannels(channels);
+      });
+  } else {
+    const cached = allChannels.filter(
+      ch => ch.category_id == categoryId
+    );
+    currentChannels = cached;
+    renderChannels(cached);
+  }
 });
 
 /* =========================
@@ -131,25 +214,16 @@ function renderChannels(channels) {
   channelList.innerHTML = '<option value="">Selecciona un canal</option>';
 
   const MAX = 400;
-  const list = channels.slice(0, MAX);
-
-  list.forEach(ch => {
+  channels.slice(0, MAX).forEach(ch => {
     const option = document.createElement("option");
     option.value = ch.stream_id;
     option.textContent = ch.name;
     channelList.appendChild(option);
   });
-
-  if (channels.length > MAX) {
-    const option = document.createElement("option");
-    option.disabled = true;
-    option.textContent = `... escribe para filtrar (${channels.length - MAX} más)`;
-    channelList.appendChild(option);
-  }
 }
 
 /* =========================
-   EPG — DECODER IPTV EPG (PRO, FINAL)
+   EPG — DECODER IPTV PRO
 ========================= */
 
 function decodeEPG(text) {
@@ -157,79 +231,55 @@ function decodeEPG(text) {
 
   let result = text.trim();
 
-  // 1️⃣ Intentar Base64 (normal y URL-safe)
   try {
-    const base64 = result
-      .replace(/-/g, "+")
-      .replace(/_/g, "/");
-
+    const base64 = result.replace(/-/g, "+").replace(/_/g, "/");
     if (/^[A-Za-z0-9+/=]+$/.test(base64)) {
       const binary = atob(base64);
-
-      // 2️⃣ Convertir Latin1 → UTF-8
       result = decodeURIComponent(
         Array.prototype.map.call(binary, c =>
           "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2)
         ).join("")
       );
     }
-  } catch {
-    // si falla, seguimos con el texto original
-  }
+  } catch {}
 
-  // 3️⃣ Limpieza final
-  return result
-    .replace(/\u0000/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  return result.replace(/\u0000/g, "").replace(/\s+/g, " ").trim();
 }
 
-function fmtTime(epochSeconds) {
-  if (!epochSeconds) return "";
-  const d = new Date(epochSeconds * 1000);
+function fmtTime(epoch) {
+  if (!epoch) return "";
+  const d = new Date(epoch * 1000);
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-function setEpgLoading() {
-  epgNowNext.textContent = "Cargando guía (EPG)...";
-}
-
-function setEpgEmpty(msg = "Este canal no tiene guía disponible (EPG).") {
-  epgNowNext.textContent = msg;
 }
 
 function renderEpg(items) {
   if (!Array.isArray(items) || items.length === 0) {
-    setEpgEmpty();
+    epgNowNext.textContent = "Este canal no tiene guía disponible (EPG).";
     return;
   }
 
   epgNowNext.innerHTML = items.slice(0, 5).map(it => {
     const title = decodeEPG(it.title || it.name || "");
-    const desc  = decodeEPG(it.description || "");
-
-    const start = fmtTime(it.start_timestamp || it.start);
-    const end   = fmtTime(it.stop_timestamp || it.end);
+    const start = fmtTime(it.start_timestamp);
+    const end = fmtTime(it.stop_timestamp);
 
     return `
       <div class="epg-item">
-        <div class="epg-title">${title || "Sin título"}</div>
+        <div class="epg-title">${title}</div>
         <div class="epg-time">${start}${end ? " – " + end : ""}</div>
-        ${desc ? `<div class="epg-desc">${desc}</div>` : ""}
       </div>
     `;
   }).join("");
 }
 
 function loadEpgForStream(streamId) {
-  setEpgLoading();
+  epgNowNext.textContent = "Cargando guía (EPG)...";
   apiFetch(`/api/epg/${streamId}`)
     .then(r => r.json())
-    .then(data => {
-      const items = data?.epg_listings || data?.epg_list || data?.listings || [];
-      renderEpg(Array.isArray(items) ? items : []);
-    })
-    .catch(() => setEpgEmpty());
+    .then(data => renderEpg(data.epg_listings || []))
+    .catch(() => {
+      epgNowNext.textContent = "No se pudo cargar la guía (EPG).";
+    });
 }
 
 /* =========================
@@ -240,11 +290,14 @@ function playStreamById(streamId) {
   if (!streamId) return;
 
   const isFav = getFavorites().some(f => f.stream_id == streamId);
-  favToggle.textContent = isFav ? "⭐ Quitar de favoritos" : "⭐ Añadir a favoritos";
+  favToggle.textContent = isFav
+    ? "⭐ Quitar de favoritos"
+    : "⭐ Añadir a favoritos";
 
   loadEpgForStream(streamId);
 
-  const streamURL = `/api/stream/${streamId}?key=${encodeURIComponent(APP_KEY)}`;
+  const streamURL =
+    `/api/stream/${streamId}?key=${encodeURIComponent(APP_KEY)}`;
 
   if (Hls.isSupported()) {
     if (hls) hls.destroy();
@@ -260,7 +313,7 @@ function playStreamById(streamId) {
 }
 
 /* =========================
-   BUSCADOR
+   BUSCADOR GLOBAL
 ========================= */
 
 let searchTimer = null;
@@ -271,14 +324,16 @@ searchInput.addEventListener("input", () => {
     const q = searchInput.value.toLowerCase();
     renderChannels(
       q
-        ? allChannels.filter(c => (c.name || "").toLowerCase().includes(q))
+        ? allChannels.filter(c =>
+            c.name.toLowerCase().includes(q)
+          )
         : currentChannels
     );
   }, 150);
 });
 
 /* =========================
-   EVENTOS
+   EVENTOS UI
 ========================= */
 
 channelList.addEventListener("change", () => {
@@ -295,7 +350,7 @@ favToggle.addEventListener("click", () => {
   if (exists) {
     favs = favs.filter(f => f.stream_id != id);
   } else {
-    const ch = allChannels.find(c => c.stream_id == id) || currentChannels.find(c => c.stream_id == id);
+    const ch = allChannels.find(c => c.stream_id == id);
     if (ch) favs.push({ stream_id: ch.stream_id, name: ch.name });
   }
 
@@ -309,15 +364,7 @@ favList.addEventListener("change", () => {
 });
 
 /* =========================
-   INIT + PWA
+   INIT
 ========================= */
 
 renderFavorites();
-
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/service-worker.js")
-      .then(() => console.log("✅ PWA lista"))
-      .catch(err => console.error("❌ SW error", err));
-  });
-}

@@ -52,11 +52,24 @@
         <option value="">Todas las categorías</option>
       </select>
 
+      <!-- 🔄 ÚNICO BOTÓN DE RECARGA -->
+      <button
+        id="reloadCategoriesBtn"
+        type="button"
+        aria-label="Recargar categorías"
+      >
+        🔄 Recargar categorías
+      </button>
+
       <select id="channelList" aria-label="Seleccionar canal">
         <option value="">Selecciona un canal</option>
       </select>
 
-      <button id="favToggle" aria-label="Añadir o quitar de favoritos">
+      <button
+        id="favToggle"
+        type="button"
+        aria-label="Añadir o quitar de favoritos"
+      >
         ⭐ Añadir a favoritos
       </button>
 
@@ -78,6 +91,7 @@
 
   <!-- HLS.js -->
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+
   <!-- App -->
   <script src="app.js"></script>
 

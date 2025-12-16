@@ -149,3 +149,15 @@ button {
 #reloadCategoriesBtn:active {
   background: #000;
 }
+
+
+button, select, input {
+  font-size: 20px;
+  padding: 14px;
+}
+
+button:focus,
+select:focus,
+input:focus {
+  outline: 3px solid #00adee;
+}

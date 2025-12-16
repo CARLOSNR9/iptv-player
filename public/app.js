@@ -38,8 +38,8 @@ let hls = null;
    CANALES EN MEMORIA
 ========================= */
 
-let currentChannels = []; // por categoría
-let allChannels = [];     // GLOBAL
+let currentChannels = [];
+let allChannels = [];
 
 /* =========================
    FAVORITOS (localStorage)
@@ -76,7 +76,7 @@ function renderFavorites() {
 ========================= */
 
 apiFetch("/api/categories")
-  .then(res => res.json())
+  .then(r => r.json())
   .then(categories => {
     categories.forEach(cat => {
       const option = document.createElement("option");
@@ -84,21 +84,19 @@ apiFetch("/api/categories")
       option.textContent = cat.category_name;
       categoryList.appendChild(option);
     });
-  })
-  .catch(err => console.error("Error cargando categorías", err));
+  });
 
 /* =========================
    CARGAR TODOS LOS CANALES
 ========================= */
 
 apiFetch("/api/channels")
-  .then(res => res.json())
+  .then(r => r.json())
   .then(channels => {
     allChannels = channels;
     currentChannels = channels;
     renderChannels(channels);
-  })
-  .catch(err => console.error("Error cargando canales globales", err));
+  });
 
 /* =========================
    CARGAR CANALES POR CATEGORÍA
@@ -118,12 +116,11 @@ categoryList.addEventListener("change", () => {
   }
 
   apiFetch(`/api/channels/${categoryId}`)
-    .then(res => res.json())
+    .then(r => r.json())
     .then(channels => {
       currentChannels = channels;
       renderChannels(channels);
-    })
-    .catch(err => console.error("Error cargando canales", err));
+    });
 });
 
 /* =========================
@@ -152,31 +149,15 @@ function renderChannels(channels) {
 }
 
 /* =========================
-   EPG (GUÍA)
+   EPG
 ========================= */
 
 function setEpgLoading() {
-  if (epgNowNext) epgNowNext.textContent = "Cargando guía (EPG)...";
+  epgNowNext.textContent = "Cargando guía (EPG)...";
 }
 
 function setEpgEmpty(msg = "Este canal no tiene guía disponible (EPG).") {
-  if (epgNowNext) epgNowNext.textContent = msg;
-}
-
-function maybeDecodeBase64(text) {
-  if (!text || typeof text !== "string") return "";
-  try {
-    if (/^[A-Za-z0-9+/=]+$/.test(text) && text.length % 4 === 0) {
-      return decodeURIComponent(escape(atob(text)));
-    }
-  } catch (_) {}
-  return text;
-}
-
-function fmtTime(epochSeconds) {
-  if (!epochSeconds) return "";
-  const d = new Date(epochSeconds * 1000);
-  return d.toLocaleString();
+  epgNowNext.textContent = msg;
 }
 
 function renderEpg(items) {
@@ -185,110 +166,63 @@ function renderEpg(items) {
     return;
   }
 
-  epgNowNext.innerHTML = items.slice(0, 5).map(it => {
-    const title = maybeDecodeBase64(it.title || it.name || "");
-    const desc  = maybeDecodeBase64(it.description || "");
-    const start = fmtTime(it.start_timestamp || it.start || it.start_time);
-    const end   = fmtTime(it.stop_timestamp || it.end || it.end_time);
-
-    return `
-      <div class="epg-item">
-        <div class="epg-title">${title || "Sin título"}</div>
-        <div class="epg-time">${start}${end ? " — " + end : ""}</div>
-        ${desc ? `<div class="epg-desc">${desc}</div>` : ""}
-      </div>
-    `;
-  }).join("");
+  epgNowNext.innerHTML = items.slice(0, 5).map(it => `
+    <div class="epg-item">
+      <div class="epg-title">${it.title || it.name || "Sin título"}</div>
+      <div class="epg-time">${new Date(it.start_timestamp * 1000).toLocaleString()}</div>
+    </div>
+  `).join("");
 }
 
 function loadEpgForStream(streamId) {
   setEpgLoading();
-
   apiFetch(`/api/epg/${streamId}`)
     .then(r => r.json())
-    .then(data => {
-      const items =
-        data?.epg_listings ||
-        data?.epg_list ||
-        data?.listings ||
-        (Array.isArray(data) ? data : []);
-      renderEpg(items);
-    })
-    .catch(err => {
-      console.error("Error cargando EPG:", err);
-      setEpgEmpty("No se pudo cargar la guía (EPG).");
-    });
+    .then(data => renderEpg(data.epg_listings || []))
+    .catch(() => setEpgEmpty());
 }
 
 /* =========================
-   DETECCIÓN SAFARI
-========================= */
-
-function isSafari() {
-  return /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-}
-
-/* =========================
-   FUNCIÓN CENTRAL DE REPRODUCCIÓN (SAFARI ONLY)
+   🎬 REPRODUCCIÓN (HLS PROXY)
 ========================= */
 
 function playStreamById(streamId) {
   if (!streamId) return;
 
   // Favoritos
-  const favs = getFavorites();
-  const isFav = favs.some(f => f.stream_id == streamId);
+  const isFav = getFavorites().some(f => f.stream_id == streamId);
   favToggle.textContent = isFav ? "⭐ Quitar de favoritos" : "⭐ Añadir a favoritos";
 
-  // EPG
   loadEpgForStream(streamId);
 
-  // URL directa al proveedor
-  const directURL = `https://zona593.live:8443/live/9R5bVzVKVz/eGWMYNHUcv/${streamId}.m3u8`;
+  const streamURL = `/api/stream/${streamId}?key=${encodeURIComponent(APP_KEY)}`;
 
-  // ✅ SAFARI / iOS → HLS NATIVO
-  if (isSafari() && video.canPlayType("application/vnd.apple.mpegurl")) {
-    if (hls) {
-      hls.destroy();
-      hls = null;
-    }
-    video.src = directURL;
-    video.play().catch(() => {});
-  }
-  // ❌ OTROS NAVEGADORES
-  else {
-    alert(
-      "Este canal solo puede reproducirse en Safari (iPhone/iPad) o desde red local."
-    );
+  if (Hls.isSupported()) {
+    if (hls) hls.destroy();
+    hls = new Hls();
+    hls.loadSource(streamURL);
+    hls.attachMedia(video);
+  } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+    video.src = streamURL;
   }
 
-  // UX
   searchInput.blur();
   video.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 /* =========================
-   BUSCADOR GLOBAL
+   BUSCADOR
 ========================= */
 
 let searchTimer = null;
 
 searchInput.addEventListener("input", () => {
   clearTimeout(searchTimer);
-
   searchTimer = setTimeout(() => {
-    const query = searchInput.value.trim().toLowerCase();
-
-    if (!query) {
-      renderChannels(currentChannels);
-      return;
-    }
-
-    const filtered = allChannels.filter(ch =>
-      (ch.name || "").toLowerCase().includes(query)
+    const q = searchInput.value.toLowerCase();
+    renderChannels(
+      q ? allChannels.filter(c => c.name.toLowerCase().includes(q)) : currentChannels
     );
-
-    renderChannels(filtered);
   }, 150);
 });
 
@@ -301,28 +235,17 @@ channelList.addEventListener("change", () => {
 });
 
 favToggle.addEventListener("click", () => {
-  const streamId = channelList.value;
-  if (!streamId) return;
-
-  const channel =
-    allChannels.find(ch => ch.stream_id == streamId) ||
-    currentChannels.find(ch => ch.stream_id == streamId);
-
-  if (!channel) return;
+  const id = channelList.value;
+  if (!id) return;
 
   let favs = getFavorites();
-  const exists = favs.some(f => f.stream_id == streamId);
+  const exists = favs.some(f => f.stream_id == id);
 
   if (exists) {
-    favs = favs.filter(f => f.stream_id != streamId);
-    favToggle.textContent = "⭐ Añadir a favoritos";
-
-    if (favList.value == streamId) {
-      favList.value = "";
-    }
+    favs = favs.filter(f => f.stream_id != id);
   } else {
-    favs.push({ stream_id: channel.stream_id, name: channel.name });
-    favToggle.textContent = "⭐ Quitar de favoritos";
+    const ch = allChannels.find(c => c.stream_id == id);
+    if (ch) favs.push({ stream_id: ch.stream_id, name: ch.name });
   }
 
   saveFavorites(favs);

@@ -12,10 +12,13 @@ const IPTV_SERVER = process.env.IPTV_SERVER;
 const IPTV_USER = process.env.IPTV_USER;
 const IPTV_PASS = process.env.IPTV_PASS;
 
-// ✅ Llave simple para proteger /api
+// 🔐 Llave de protección
 const APP_KEY = process.env.APP_KEY || "";
 
-// CORS (incluye header personalizado)
+/* =========================
+   CORS + MIDDLEWARE
+========================= */
+
 app.use(cors({
   origin: true,
   credentials: false,
@@ -26,28 +29,25 @@ app.use(express.json());
 app.use(express.static("public"));
 
 /* =========================
-   MIDDLEWARE: PROTEGER /api/*
-   - Acepta header: X-APP-KEY
-   - o query: ?key= (para HLS.js)
+   PROTECCIÓN /api/*
+   - Header: X-APP-KEY
+   - Query: ?key= (HLS)
 ========================= */
 
 app.use("/api", (req, res, next) => {
-  // Si no hay APP_KEY configurada → bloquear
   if (!APP_KEY) {
     return res.status(500).json({
       error: "APP_KEY no configurada en el servidor"
     });
   }
 
-  // 🔓 Permitir llamadas internas (frontend servido por Express)
+  // Permitir llamadas internas (assets, navegación directa)
   const origin = req.get("origin");
-  if (!origin) {
-    return next();
-  }
+  if (!origin) return next();
 
-  const keyFromHeader = req.header("X-APP-KEY");
-  const keyFromQuery = req.query.key; // para HLS
-  const key = keyFromHeader || keyFromQuery;
+  const key =
+    req.header("X-APP-KEY") ||
+    req.query.key;
 
   if (key !== APP_KEY) {
     return res.status(401).json({ error: "Unauthorized" });
@@ -55,7 +55,6 @@ app.use("/api", (req, res, next) => {
 
   next();
 });
-
 
 /* =========================
    HELPERS
@@ -71,7 +70,7 @@ function iptvURL(params) {
 }
 
 /* =========================
-   API ROUTES
+   API IPTV (JSON)
 ========================= */
 
 // Categorías
@@ -79,7 +78,7 @@ app.get("/api/categories", async (req, res) => {
   try {
     const r = await fetch(iptvURL({ action: "get_live_categories" }));
     res.json(await r.json());
-  } catch (e) {
+  } catch {
     res.status(500).json({ error: "Error cargando categorías" });
   }
 });
@@ -87,9 +86,9 @@ app.get("/api/categories", async (req, res) => {
 // Canales (global)
 app.get("/api/channels", async (req, res) => {
   try {
-    const r = await fetch(iptvURL({ action: "get_live_streams" }));
+    const r =  await fetch(iptvURL({ action: "get_live_streams" }));
     res.json(await r.json());
-  } catch (e) {
+  } catch {
     res.status(500).json({ error: "Error cargando canales" });
   }
 });
@@ -104,7 +103,7 @@ app.get("/api/channels/:categoryId", async (req, res) => {
       })
     );
     res.json(await r.json());
-  } catch (e) {
+  } catch {
     res.status(500).json({ error: "Error cargando canales por categoría" });
   }
 });
@@ -120,39 +119,96 @@ app.get("/api/epg/:streamId", async (req, res) => {
       })
     );
     res.json(await r.json());
-  } catch (e) {
+  } catch {
     res.status(500).json({ error: "Error cargando EPG" });
   }
 });
 
-// Stream proxy (redirect)
+/* =========================================================
+   🔥 HLS PROXY REAL (PLAYLIST + SEGMENTOS)
+========================================================= */
+
+/* ---------- A) Playlist m3u8 con rewrite ---------- */
 app.get("/api/stream/:streamId", async (req, res) => {
   try {
-    const streamURL = `${IPTV_SERVER}/live/${IPTV_USER}/${IPTV_PASS}/${req.params.streamId}.m3u8`;
+    const streamId = req.params.streamId;
 
-    const response = await fetch(streamURL, {
+    const upstreamUrl =
+      `${IPTV_SERVER}/live/${IPTV_USER}/${IPTV_PASS}/${streamId}.m3u8`;
+
+    const r = await fetch(upstreamUrl, {
       headers: {
         "User-Agent": "Mozilla/5.0",
         "Accept": "*/*"
       }
     });
 
-    if (!response.ok) {
-      return res.status(502).send("Error obteniendo stream");
+    if (!r.ok) {
+      const txt = await r.text().catch(() => "");
+      console.error("Upstream m3u8 failed:", r.status, txt.slice(0, 200));
+      return res.status(502).send("Upstream m3u8 failed");
     }
 
-    // Copiar headers importantes
-    res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
-    res.setHeader("Cache-Control", "no-cache");
+    const m3u8 = await r.text();
+    const base = new URL(upstreamUrl);
 
-    // 🔥 Stream directo (pipe)
-    response.body.pipe(res);
+    const rewritten = m3u8
+      .split("\n")
+      .map(line => {
+        const l = line.trim();
+        if (!l || l.startsWith("#")) return line;
+
+        const abs = new URL(l, base).toString();
+
+        return `/api/hls?u=${encodeURIComponent(abs)}&key=${encodeURIComponent(APP_KEY)}`;
+      })
+      .join("\n");
+
+    res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
+    res.setHeader("Cache-Control", "no-store");
+    res.send(rewritten);
+
   } catch (err) {
-    console.error("Error proxy stream:", err);
-    res.status(500).send("Error proxy stream");
+    console.error("Error proxy playlist:", err);
+    res.status(500).send("Error proxy playlist");
   }
 });
 
+/* ---------- B) Proxy genérico para segmentos / keys ---------- */
+app.get("/api/hls", async (req, res) => {
+  try {
+    const u = req.query.u;
+    if (!u) return res.status(400).send("Missing u");
+
+    const r = await fetch(u, {
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "*/*"
+      }
+    });
+
+    if (!r.ok) {
+      const txt = await r.text().catch(() => "");
+      console.error("Upstream segment failed:", r.status, txt.slice(0, 200));
+      return res.status(502).send("Upstream segment failed");
+    }
+
+    const ct = r.headers.get("content-type");
+    if (ct) res.setHeader("Content-Type", ct);
+
+    res.setHeader("Cache-Control", "no-store");
+
+    r.body.pipe(res);
+
+  } catch (err) {
+    console.error("Error proxy segment:", err);
+    res.status(500).send("Error proxy segment");
+  }
+});
+
+/* =========================
+   START
+========================= */
 
 app.listen(PORT, () => {
   console.log(`✅ Backend IPTV activo en http://localhost:${PORT}`);

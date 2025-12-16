@@ -8,49 +8,60 @@
 </head>
 <body>
 
-  <h1>Mi reproductor IPTV</h1>
+  <main>
 
-  <!-- Reproductor (fuera de controles) -->
-  <video
-    id="video"
-    controls
-    autoplay
-    playsinline
-    webkit-playsinline
-    width="100%"
-  ></video>
+    <h1>Mi reproductor IPTV</h1>
 
-  <!-- Controles -->
-  <div id="controls">
+    <!-- Reproductor -->
+    <video
+      id="video"
+      controls
+      autoplay
+      playsinline
+      webkit-playsinline
+      preload="none"
+      width="100%"
+      aria-label="Reproductor de video IPTV"
+    ></video>
 
-    <input
-      type="text"
-      id="searchInput"
-      placeholder="Buscar canal..."
-      autocomplete="off"
-    />
+    <!-- Controles -->
+    <div id="controls">
 
-    <select id="categoryList">
-      <option value="">Todas las categorías</option>
-    </select>
+      <input
+        type="text"
+        id="searchInput"
+        placeholder="Buscar canal..."
+        autocomplete="off"
+        aria-label="Buscar canal"
+      />
 
-    <select id="channelList">
-      <option value="">Selecciona un canal</option>
-    </select>
+      <select id="categoryList" aria-label="Seleccionar categoría">
+        <option value="">Todas las categorías</option>
+      </select>
 
-    <button id="favToggle">⭐ Añadir a favoritos</button>
+      <select id="channelList" aria-label="Seleccionar canal">
+        <option value="">Selecciona un canal</option>
+      </select>
 
-    <select id="favList">
-      <option value="">⭐ Favoritos</option>
-    </select>
+      <button id="favToggle" aria-label="Añadir o quitar de favoritos">
+        ⭐ Añadir a favoritos
+      </button>
 
-  </div>
+      <select id="favList" aria-label="Canales favoritos">
+        <option value="">⭐ Favoritos</option>
+      </select>
 
-  <!-- Panel EPG -->
-  <div id="epgPanel">
-    <h2>Guía (EPG)</h2>
-    <div id="epgNowNext">Selecciona un canal para ver la guía.</div>
-  </div>
+    </div>
+
+    <!-- Panel EPG -->
+    <div id="epgPanel">
+      <h2>Guía (EPG)</h2>
+      <div id="epgNowNext">
+        Selecciona un canal para ver la guía.
+      </div>
+    </div>
+
+  </main>
 
   <!-- HLS.js -->
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>

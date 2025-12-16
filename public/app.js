@@ -221,7 +221,15 @@ function loadEpgForStream(streamId) {
 }
 
 /* =========================
-   FUNCIÓN CENTRAL DE REPRODUCCIÓN ⭐
+   DETECCIÓN SAFARI
+========================= */
+
+function isSafari() {
+  return /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+}
+
+/* =========================
+   FUNCIÓN CENTRAL DE REPRODUCCIÓN (SAFARI ONLY)
 ========================= */
 
 function playStreamById(streamId) {
@@ -235,21 +243,26 @@ function playStreamById(streamId) {
   // EPG
   loadEpgForStream(streamId);
 
-  // Stream (HLS NO soporta headers → key por query)
-  
-  const streamURL = `https://zona593.live:8443/live/9R5bVzVKVz/eGWMYNHUcv/${streamId}.m3u8`;
+  // URL directa al proveedor
+  const directURL = `https://zona593.live:8443/live/9R5bVzVKVz/eGWMYNHUcv/${streamId}.m3u8`;
 
-
-  if (Hls.isSupported()) {
-    if (hls) hls.destroy();
-    hls = new Hls();
-    hls.loadSource(streamURL);
-    hls.attachMedia(video);
-  } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-    video.src = streamURL;
+  // ✅ SAFARI / iOS → HLS NATIVO
+  if (isSafari() && video.canPlayType("application/vnd.apple.mpegurl")) {
+    if (hls) {
+      hls.destroy();
+      hls = null;
+    }
+    video.src = directURL;
+    video.play().catch(() => {});
+  }
+  // ❌ OTROS NAVEGADORES
+  else {
+    alert(
+      "Este canal solo puede reproducirse en Safari (iPhone/iPad) o desde red local."
+    );
   }
 
-  // UX móvil
+  // UX
   searchInput.blur();
   video.scrollIntoView({ behavior: "smooth", block: "start" });
 }
@@ -280,7 +293,7 @@ searchInput.addEventListener("input", () => {
 });
 
 /* =========================
-   EVENTOS SIMPLIFICADOS
+   EVENTOS
 ========================= */
 
 channelList.addEventListener("change", () => {

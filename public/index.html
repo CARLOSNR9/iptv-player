@@ -3,97 +3,90 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
-  <title>Mi IPTV Player</title>
+  <title>IPTV Player Pro</title>
 
   <!-- PWA -->
   <link rel="manifest" href="/manifest.json" />
-  <meta name="theme-color" content="#000000" />
+  <meta name="theme-color" content="#141414" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="IPTV" />
 
-  <!-- Icono iOS -->
-  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
-
-  <!-- Estilos -->
+  <!-- Icons & Fonts -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
+  
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
-  <main>
-
-    <h1>Mi reproductor IPTV YC</h1>
-
-    <!-- Reproductor -->
-    <video
-      id="video"
-      controls
-      autoplay
-      playsinline
-      webkit-playsinline
-      preload="none"
-      width="100%"
-      aria-label="Reproductor de video IPTV"
-    ></video>
-
-    <!-- Controles -->
-    <div id="controls">
-
-      <input
-        type="text"
-        id="searchInput"
-        placeholder="Buscar canal..."
-        autocomplete="off"
-        aria-label="Buscar canal"
-      />
-
-      <select id="categoryList" aria-label="Seleccionar categoría">
-        <option value="">Todas las categorías</option>
-      </select>
-
-      <!-- 🔄 ÚNICO BOTÓN DE RECARGA -->
-      <button
-        id="reloadCategoriesBtn"
-        type="button"
-        aria-label="Recargar categorías"
-      >
-        🔄 Recargar categorías
-      </button>
-
-      <select id="channelList" aria-label="Seleccionar canal">
-        <option value="">Selecciona un canal</option>
-      </select>
-
-      <button
-        id="favToggle"
-        type="button"
-        aria-label="Añadir o quitar de favoritos"
-      >
-        ⭐ Añadir a favoritos
-      </button>
-
-      <select id="favList" aria-label="Canales favoritos">
-        <option value="">⭐ Favoritos</option>
-      </select>
-
-    </div>
-
-    <!-- Panel EPG -->
-    <div id="epgPanel">
-      <h2>Guía (EPG)</h2>
-      <div id="epgNowNext">
-        Selecciona un canal para ver la guía.
+  <div class="app-container">
+    
+    <!-- 1️⃣ Sidebar: Categorías -->
+    <nav class="sidebar" id="sidebar">
+      <div class="logo">
+        <i class="fa-solid fa-tv"></i> IPTV PRO
       </div>
-    </div>
+      
+      <div class="search-box">
+        <i class="fa-solid fa-magnifying-glass"></i>
+        <input type="text" id="searchInput" placeholder="Buscar canal..." autocomplete="off" />
+      </div>
 
-  </main>
+      <ul class="category-list" id="categoryList">
+        <!-- JS generará <li> aquí -->
+        <li class="active" data-id="">
+          <i class="fa-solid fa-layer-group"></i> Todas
+        </li>
+      </ul>
+      
+      <div class="sidebar-footer">
+        <button id="reloadBtn" class="btn-icon" title="Recargar">
+          <i class="fa-solid fa-rotate-right"></i>
+        </button>
+      </div>
+    </nav>
 
-  <!-- HLS.js -->
+    <!-- 2️⃣ Main Content -->
+    <main class="main-content">
+      
+      <!-- Video Player Section -->
+      <div class="player-wrapper">
+        <div class="video-container" id="videoContainer">
+          <video id="video" playsinline webkit-playsinline></video>
+          
+          <!-- Custom Controls Overlay -->
+          <div class="controls-overlay" id="controlsOverlay">
+            <div class="video-info">
+              <h2 id="currentChannelName">Selecciona un canal</h2>
+              <p id="currentProgram">Sin información EPG</p>
+            </div>
+            
+            <div class="video-buttons">
+              <button id="castBtn" class="control-btn" hidden><google-cast-launcher></google-cast-launcher></button>
+              <button id="favToggle" class="control-btn"><i class="fa-regular fa-star"></i></button>
+              <button id="pipBtn" class="control-btn"><i class="fa-solid fa-clone"></i></button>
+              <button id="fullscreenBtn" class="control-btn"><i class="fa-solid fa-expand"></i></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Channel Grid -->
+      <div class="content-body">
+        <h3 id="categoryTitle">Todos los canales</h3>
+        <div class="channel-grid" id="channelGrid">
+          <!-- JS generará .channel-card aquí -->
+        </div>
+      </div>
+
+    </main>
+
+  </div>
+
+  <!-- Scripts -->
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-
-  <!-- App -->
+  <!-- Chromecast SDK -->
+  <script src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"></script>
   <script src="app.js"></script>
-
 </body>
 </html>

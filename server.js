@@ -70,15 +70,55 @@ function iptvURL(params) {
 }
 
 /* =========================
+   CACHE SIMPLE (In-Memory)
+   Evita baneos y acelera la carga.
+   Duración: 5 minutos.
+========================= */
+
+const CACHE_DURATION = 5 * 60 * 1000;
+const cache = {};
+
+async function getCachedData(key, fetcher) {
+  const now = Date.now();
+  if (cache[key] && (now - cache[key].timestamp < CACHE_DURATION)) {
+    console.log(`⚡ Serving from cache: ${key}`);
+    return cache[key].data;
+  }
+
+  console.log(`🌐 Fetching fresh data: ${key}`);
+  const data = await fetcher();
+  
+  if (data) {
+    cache[key] = {
+      timestamp: now,
+      data: data
+    };
+  }
+  
+  return data;
+}
+
+/* =========================
    API IPTV (JSON)
 ========================= */
 
 // Categorías
 app.get("/api/categories", async (req, res) => {
   try {
-    const r = await fetch(iptvURL({ action: "get_live_categories" }));
-    res.json(await r.json());
-  } catch {
+    // Si el cliente pide forzar recarga (?refresh=...) ignoramos caché
+    const forceRefresh = req.query.refresh;
+    const key = "categories";
+
+    if (forceRefresh) delete cache[key];
+
+    const data = await getCachedData(key, async () => {
+      const r = await fetch(iptvURL({ action: "get_live_categories" }));
+      return await r.json();
+    });
+
+    res.json(data);
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Error cargando categorías" });
   }
 });
@@ -86,9 +126,13 @@ app.get("/api/categories", async (req, res) => {
 // Canales (global)
 app.get("/api/channels", async (req, res) => {
   try {
-    const r = await fetch(iptvURL({ action: "get_live_streams" }));
-    res.json(await r.json());
-  } catch {
+    const data = await getCachedData("all_channels", async () => {
+      const r = await fetch(iptvURL({ action: "get_live_streams" }));
+      return await r.json();
+    });
+    res.json(data);
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Error cargando canales" });
   }
 });
@@ -96,14 +140,22 @@ app.get("/api/channels", async (req, res) => {
 // Canales por categoría
 app.get("/api/channels/:categoryId", async (req, res) => {
   try {
-    const r = await fetch(
-      iptvURL({
-        action: "get_live_streams",
-        category_id: req.params.categoryId
-      })
-    );
-    res.json(await r.json());
-  } catch {
+    const catId = req.params.categoryId;
+    const key = `channels_${catId}`;
+
+    const data = await getCachedData(key, async () => {
+      const r = await fetch(
+        iptvURL({
+          action: "get_live_streams",
+          category_id: catId
+        })
+      );
+      return await r.json();
+    });
+
+    res.json(data);
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Error cargando canales por categoría" });
   }
 });
@@ -114,10 +166,19 @@ app.get("/api/channels/:categoryId", async (req, res) => {
 
 app.get("/api/epg/:streamId", async (req, res) => {
   try {
+    // EPG suele cambiar rápido, caché corta de 1 min o sin caché
+    const streamId = req.params.streamId;
+    const key = `epg_${streamId}`;
+
+    // Usamos una caché más corta (1 minuto) para la guía
+    if (cache[key] && (Date.now() - cache[key].timestamp < 60 * 1000)) {
+       return res.json(cache[key].data);
+    }
+
     const r = await fetch(
       iptvURL({
         action: "get_short_epg",
-        stream_id: req.params.streamId,
+        stream_id: streamId,
         limit: 10
       }),
       {
@@ -131,6 +192,9 @@ app.get("/api/epg/:streamId", async (req, res) => {
     const buffer = await r.arrayBuffer();
     const text = new TextDecoder("utf-8").decode(buffer);
     const json = JSON.parse(text);
+
+    // Guardar en caché
+    cache[key] = { timestamp: Date.now(), data: json };
 
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.json(json);

@@ -1,370 +1,322 @@
 /* =========================
-   APP KEY (DEBE COINCIDIR CON RENDER)
+   APP KEY
 ========================= */
-
 const APP_KEY = "mi_clave_super_secreta_123";
 
 /* =========================
-   FETCH SEGURO
+   DOM ELEMENTS
 ========================= */
+const categoryList = document.getElementById("categoryList");
+const channelGrid = document.getElementById("channelGrid");
+const searchInput = document.getElementById("searchInput");
+const categoryTitle = document.getElementById("categoryTitle");
+const reloadBtn = document.getElementById("reloadBtn");
 
+// Video & Controls
+const video = document.getElementById("video");
+const videoContainer = document.getElementById("videoContainer");
+const currentChannelName = document.getElementById("currentChannelName");
+const currentProgram = document.getElementById("currentProgram");
+const favToggle = document.getElementById("favToggle");
+const pipBtn = document.getElementById("pipBtn");
+const fullscreenBtn = document.getElementById("fullscreenBtn");
+
+// State
+let hls = null;
+let allChannels = [];
+let currentChannels = [];
+const categoriesMap = {};
+let currentStreamId = null;
+
+const FAV_KEY = "iptv_favorites";
+const RECENT_KEY = "iptv_recent"; // Optional: Recently watched
+
+/* =========================
+   FETCH HELPER
+========================= */
 function apiFetch(url, options = {}) {
   return fetch(url, {
     ...options,
-    headers: {
-      ...(options.headers || {}),
-      "X-APP-KEY": APP_KEY
-    }
+    headers: { ...(options.headers || {}), "X-APP-KEY": APP_KEY }
   });
 }
 
 /* =========================
-   EVENTOS — CATEGORÍAS DINÁMICAS
+   CHROMECAST SETUP
 ========================= */
-
-const EVENT_CATEGORY_KEYWORDS = [
-  "EVENTOS",
-  "PPV",
-  "DISNEY",
-  "UFC",
-  "BOX",
-  "WWE",
-  "NAVIDAD"
-];
-
-function isEventCategory(name = "") {
-  const n = name.toUpperCase();
-  return EVENT_CATEGORY_KEYWORDS.some(k => n.includes(k));
-}
-
-const categoriesMap = {}; // category_id -> category_name
-
-/* =========================
-   DOM
-========================= */
-
-const categoryList = document.getElementById("categoryList");
-const channelList = document.getElementById("channelList");
-const reloadCategoriesBtn = document.getElementById("reloadCategoriesBtn");
-
-const video = document.getElementById("video");
-const searchInput = document.getElementById("searchInput");
-const epgNowNext = document.getElementById("epgNowNext");
-
-/* ⭐ Favoritos */
-const favToggle = document.getElementById("favToggle");
-const favList = document.getElementById("favList");
-
-let hls = null;
-
-/* =========================
-   CANALES EN MEMORIA
-========================= */
-
-let currentChannels = [];
-let allChannels = [];
-
-/* =========================
-   FAVORITOS (localStorage)
-========================= */
-
-const FAV_KEY = "iptv_favorites";
-
-function getFavorites() {
-  try {
-    return JSON.parse(localStorage.getItem(FAV_KEY)) || [];
-  } catch {
-    return [];
+window['__onGCastApiAvailable'] = function (isAvailable) {
+  if (isAvailable) {
+    initializeCastApi();
   }
-}
+};
 
-function saveFavorites(favs) {
-  localStorage.setItem(FAV_KEY, JSON.stringify(favs));
-}
-
-function renderFavorites() {
-  const favs = getFavorites();
-  favList.innerHTML = '<option value="">⭐ Favoritos</option>';
-
-  favs.forEach(ch => {
-    const option = document.createElement("option");
-    option.value = ch.stream_id;
-    option.textContent = ch.name;
-    favList.appendChild(option);
+function initializeCastApi() {
+  cast.framework.CastContext.getInstance().setOptions({
+    receiverApplicationId: chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
+    autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED
   });
+
+  const castBtn = document.getElementById("castBtn");
+  if (castBtn) castBtn.hidden = false;
 }
 
 /* =========================
-   CARGAR CATEGORÍAS (INICIAL)
+   1. CATEGORIAS (Sidebar)
 ========================= */
-
 function loadCategories() {
   apiFetch("/api/categories")
     .then(r => r.json())
     .then(categories => {
-      categoryList.innerHTML = '<option value="">Todas las categorías</option>';
-      Object.keys(categoriesMap).forEach(k => delete categoriesMap[k]);
-
-      categories.forEach(cat => {
-        categoriesMap[cat.category_id] = cat.category_name;
-
-        const option = document.createElement("option");
-        option.value = cat.category_id;
-        option.textContent = cat.category_name;
-        categoryList.appendChild(option);
-      });
-    })
-    .catch(err => console.error("Error cargando categorías", err));
-}
-
-loadCategories();
-
-/* =========================
-   🔄 RECARGAR SOLO CATEGORÍAS
-========================= */
-
-function reloadCategories() {
-  const previousCategory = categoryList.value;
-
-  categoryList.innerHTML =
-    '<option value="">Recargando categorías...</option>';
-
-  apiFetch(`/api/categories?refresh=${Date.now()}`)
-    .then(res => res.json())
-    .then(categories => {
-      categoryList.innerHTML =
-        '<option value="">Todas las categorías</option>';
+      // Limpiar pero dejar "Todas"
+      categoryList.innerHTML = `
+        <li class="active" data-id="">
+          <i class="fa-solid fa-layer-group"></i> Todas
+        </li>
+      `;
 
       Object.keys(categoriesMap).forEach(k => delete categoriesMap[k]);
 
       categories.forEach(cat => {
         categoriesMap[cat.category_id] = cat.category_name;
 
-        const option = document.createElement("option");
-        option.value = cat.category_id;
-        option.textContent = cat.category_name;
-        categoryList.appendChild(option);
-      });
+        const li = document.createElement("li");
+        li.dataset.id = cat.category_id;
+        li.textContent = cat.category_name; // Icono opcional segun nombre?
 
-      if (previousCategory && categoriesMap[previousCategory]) {
-        categoryList.value = previousCategory;
-      }
+        li.addEventListener("click", () => selectCategory(li, cat.category_id));
+        categoryList.appendChild(li);
+      });
     })
-    .catch(err => {
-      console.error("Error recargando categorías", err);
-      alert("No se pudieron recargar las categorías");
-    });
+    .catch(err => console.error("Error loading categories", err));
 }
 
-reloadCategoriesBtn.addEventListener("click", reloadCategories);
+function selectCategory(liElement, catId) {
+  // UI Update
+  document.querySelectorAll(".category-list li").forEach(el => el.classList.remove("active"));
+  liElement.classList.add("active");
 
-/* =========================
-   CARGAR TODOS LOS CANALES (CACHE GLOBAL)
-========================= */
-
-apiFetch("/api/channels")
-  .then(r => r.json())
-  .then(channels => {
-    allChannels = channels;
-    currentChannels = channels;
-    renderChannels(channels);
-  });
-
-/* =========================
-   CARGA POR CATEGORÍA (EVENTOS PRO)
-========================= */
-
-categoryList.addEventListener("change", () => {
-  const categoryId = categoryList.value;
-  const categoryName = categoriesMap[categoryId] || "";
-
-  channelList.innerHTML = '<option value="">Selecciona un canal</option>';
+  // Logic
   searchInput.value = "";
-  video.pause();
 
-  if (!categoryId) {
+  if (!catId) {
+    categoryTitle.textContent = "Todos los canales";
     currentChannels = allChannels;
-    renderChannels(allChannels);
-    return;
-  }
-
-  const isEvent = isEventCategory(categoryName);
-
-  if (isEvent) {
-    apiFetch(`/api/channels/${categoryId}?t=${Date.now()}`)
-      .then(r => r.json())
-      .then(channels => {
-        currentChannels = channels;
-        renderChannels(channels);
-      });
   } else {
-    const cached = allChannels.filter(
-      ch => ch.category_id == categoryId
-    );
-    currentChannels = cached;
-    renderChannels(cached);
+    categoryTitle.textContent = categoriesMap[catId] || "Categoría";
+    // Filtrar de la lista global (si ya la tenemos) o pedir a API si es evento
+    // Por simplicidad, usamos la lista global cargada
+    currentChannels = allChannels.filter(ch => ch.category_id == catId);
   }
-});
 
-/* =========================
-   RENDERIZAR CANALES
-========================= */
-
-function renderChannels(channels) {
-  channelList.innerHTML = '<option value="">Selecciona un canal</option>';
-
-  const MAX = 400;
-  channels.slice(0, MAX).forEach(ch => {
-    const option = document.createElement("option");
-    option.value = ch.stream_id;
-    option.textContent = ch.name;
-    channelList.appendChild(option);
-  });
+  renderChannelGrid(currentChannels);
 }
 
 /* =========================
-   EPG — DECODER IPTV PRO
+   2. CANALES (Grid + Performance)
 ========================= */
+function loadChannels() {
+  channelGrid.innerHTML = '<div class="loading-card"></div><div class="loading-card"></div><div class="loading-card"></div>';
 
-function decodeEPG(text) {
-  if (!text || typeof text !== "string") return "";
-
-  let result = text.trim();
-
-  try {
-    const base64 = result.replace(/-/g, "+").replace(/_/g, "/");
-    if (/^[A-Za-z0-9+/=]+$/.test(base64)) {
-      const binary = atob(base64);
-      result = decodeURIComponent(
-        Array.prototype.map.call(binary, c =>
-          "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2)
-        ).join("")
-      );
-    }
-  } catch {}
-
-  return result.replace(/\u0000/g, "").replace(/\s+/g, " ").trim();
-}
-
-function fmtTime(epoch) {
-  if (!epoch) return "";
-  const d = new Date(epoch * 1000);
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-function renderEpg(items) {
-  if (!Array.isArray(items) || items.length === 0) {
-    epgNowNext.textContent = "Este canal no tiene guía disponible (EPG).";
-    return;
-  }
-
-  epgNowNext.innerHTML = items.slice(0, 5).map(it => {
-    const title = decodeEPG(it.title || it.name || "");
-    const start = fmtTime(it.start_timestamp);
-    const end = fmtTime(it.stop_timestamp);
-
-    return `
-      <div class="epg-item">
-        <div class="epg-title">${title}</div>
-        <div class="epg-time">${start}${end ? " – " + end : ""}</div>
-      </div>
-    `;
-  }).join("");
-}
-
-function loadEpgForStream(streamId) {
-  epgNowNext.textContent = "Cargando guía (EPG)...";
-  apiFetch(`/api/epg/${streamId}`)
+  apiFetch("/api/channels")
     .then(r => r.json())
-    .then(data => renderEpg(data.epg_listings || []))
-    .catch(() => {
-      epgNowNext.textContent = "No se pudo cargar la guía (EPG).";
+    .then(channels => {
+      allChannels = channels;
+      currentChannels = channels;
+      renderChannelGrid(channels);
     });
 }
 
+// Renderizar por chunks para no congelar la UI con 5000 elementos
+function renderChannelGrid(channels) {
+  channelGrid.innerHTML = "";
+
+  if (channels.length === 0) {
+    channelGrid.innerHTML = "<p style='padding:20px'>No se encontraron canales.</p>";
+    return;
+  }
+
+  const CHUNK_SIZE = 50;
+  let index = 0;
+
+  function renderChunk() {
+    const chunk = channels.slice(index, index + CHUNK_SIZE);
+
+    // Usar DocumentFragment para mejor performance
+    const fragment = document.createDocumentFragment();
+
+    chunk.forEach(ch => {
+      const card = document.createElement("div");
+      card.className = "channel-card";
+      card.onclick = () => playStream(ch);
+
+      // Logo handling
+      let logoHtml;
+      if (ch.stream_icon && ch.stream_icon.startsWith("http")) {
+        logoHtml = `<img src="${ch.stream_icon}" class="channel-logo" loading="lazy" onerror="this.src='';this.className='channel-logo-placeholder fa-solid fa-tv'">`;
+      } else {
+        logoHtml = `<i class="channel-logo-placeholder fa-solid fa-tv"></i>`;
+      }
+
+      card.innerHTML = `
+        ${logoHtml}
+        <div class="channel-name">${ch.name}</div>
+      `;
+      fragment.appendChild(card);
+    });
+
+    channelGrid.appendChild(fragment);
+
+    index += CHUNK_SIZE;
+    if (index < channels.length) {
+      // Programar siguiente chunk
+      requestAnimationFrame(renderChunk);
+    }
+  }
+
+  renderChunk();
+}
+
 /* =========================
-   🎬 REPRODUCCIÓN (HLS PROXY)
+   3. PLAYER & EPG
 ========================= */
+function playStream(channel) {
+  currentStreamId = channel.stream_id;
+  currentChannelName.textContent = channel.name;
+  currentProgram.textContent = "Cargando EPG...";
 
-function playStreamById(streamId) {
-  if (!streamId) return;
+  // Favoritos UI Check
+  updateFavButtonState();
 
-  const isFav = getFavorites().some(f => f.stream_id == streamId);
-  favToggle.textContent = isFav
-    ? "⭐ Quitar de favoritos"
-    : "⭐ Añadir a favoritos";
+  // Highlight active card
+  document.querySelectorAll(".channel-card").forEach(c => c.style.border = "none");
 
-  loadEpgForStream(streamId);
+  // Load EPG
+  loadEpg(channel.stream_id);
 
-  const streamURL =
-    `/api/stream/${streamId}?key=${encodeURIComponent(APP_KEY)}`;
+  // Play Video
+  const streamURL = `/api/stream/${channel.stream_id}?key=${encodeURIComponent(APP_KEY)}`;
 
   if (Hls.isSupported()) {
     if (hls) hls.destroy();
     hls = new Hls();
     hls.loadSource(streamURL);
     hls.attachMedia(video);
+    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      video.play().catch(e => console.log("User interaction needed for audio", e));
+    });
   } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
     video.src = streamURL;
+    video.play();
   }
 
-  searchInput.blur();
-  video.scrollIntoView({ behavior: "smooth", block: "start" });
+  // Scroll to top mobile
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function loadEpg(streamId) {
+  apiFetch(`/api/epg/${streamId}`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.epg_listings && data.epg_listings.length > 0) {
+        const now = data.epg_listings[0];
+        // Decode title
+        let title = now.title || now.name || "";
+        try { title = atob(title); } catch { } // Simple try decode if base64
+
+        currentProgram.textContent = title || "Programa actual desconocido";
+      } else {
+        currentProgram.textContent = "Sin información EPG";
+      }
+    })
+    .catch(() => currentProgram.textContent = "EPG no disponible");
 }
 
 /* =========================
-   BUSCADOR GLOBAL
+   4. FAVORITOS
 ========================= */
+function getFavorites() {
+  try { return JSON.parse(localStorage.getItem(FAV_KEY)) || []; } catch { return []; }
+}
 
-let searchTimer = null;
+function updateFavButtonState() {
+  const favs = getFavorites();
+  const isFav = favs.some(f => f.stream_id == currentStreamId);
 
-searchInput.addEventListener("input", () => {
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => {
-    const q = searchInput.value.toLowerCase();
-    renderChannels(
-      q
-        ? allChannels.filter(c =>
-            c.name.toLowerCase().includes(q)
-          )
-        : currentChannels
-    );
-  }, 150);
-});
-
-/* =========================
-   EVENTOS UI
-========================= */
-
-channelList.addEventListener("change", () => {
-  playStreamById(channelList.value);
-});
+  if (isFav) {
+    favToggle.innerHTML = '<i class="fa-solid fa-star" style="color:gold"></i>';
+  } else {
+    favToggle.innerHTML = '<i class="fa-regular fa-star"></i>';
+  }
+}
 
 favToggle.addEventListener("click", () => {
-  const id = channelList.value;
-  if (!id) return;
+  if (!currentStreamId) return;
 
   let favs = getFavorites();
-  const exists = favs.some(f => f.stream_id == id);
+  const index = favs.findIndex(f => f.stream_id == currentStreamId);
 
-  if (exists) {
-    favs = favs.filter(f => f.stream_id != id);
+  if (index >= 0) {
+    favs.splice(index, 1);
   } else {
-    const ch = allChannels.find(c => c.stream_id == id);
-    if (ch) favs.push({ stream_id: ch.stream_id, name: ch.name });
+    // Buscar info del canal actual
+    const ch = allChannels.find(c => c.stream_id == currentStreamId);
+    if (ch) favs.push({ stream_id: ch.stream_id, name: ch.name, stream_icon: ch.stream_icon });
   }
 
   saveFavorites(favs);
-  favList.value = "";
-  renderFavorites();
+  updateFavButtonState();
 });
 
-favList.addEventListener("change", () => {
-  playStreamById(favList.value);
+function saveFavorites(favs) {
+  localStorage.setItem(FAV_KEY, JSON.stringify(favs));
+}
+
+/* =========================
+   5. CONTROLES PLAYER (PiP, Fullscreen)
+========================= */
+fullscreenBtn.addEventListener("click", () => {
+  if (!document.fullscreenElement) {
+    videoContainer.requestFullscreen().catch(err => console.log(err));
+  } else {
+    document.exitFullscreen();
+  }
+});
+
+pipBtn.addEventListener("click", async () => {
+  if (document.pictureInPictureElement) {
+    await document.exitPictureInPicture();
+  } else if (video.requestPictureInPicture) {
+    await video.requestPictureInPicture();
+  }
+});
+
+/* =========================
+   SEARCH
+========================= */
+let searchTimer = null;
+searchInput.addEventListener("input", (e) => {
+  const q = e.target.value.toLowerCase();
+
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    if (!q) {
+      renderChannelGrid(currentChannels);
+      return;
+    }
+
+    // Buscar en TODOS los canales, no solo la categoría actual
+    const hits = allChannels.filter(c => c.name.toLowerCase().includes(q));
+    renderChannelGrid(hits);
+  }, 300);
+});
+
+reloadBtn.addEventListener("click", () => {
+  loadCategories();
+  loadChannels();
 });
 
 /* =========================
    INIT
 ========================= */
-
-renderFavorites();
+loadCategories();
+loadChannels();

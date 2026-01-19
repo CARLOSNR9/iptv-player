@@ -381,10 +381,20 @@ closeSearchBtn.addEventListener("click", () => {
    CONTROLES PLAYER
 ========================= */
 fullscreenBtn.addEventListener("click", () => {
-  if (!document.fullscreenElement) {
-    videoContainer.requestFullscreen().catch(err => console.log(err));
-  } else {
+  if (document.fullscreenElement) {
     document.exitFullscreen();
+  } else if (document.webkitFullscreenElement) {
+    document.webkitExitFullscreen();
+  } else if (videoContainer.requestFullscreen) {
+    videoContainer.requestFullscreen();
+  } else if (video.webkitEnterFullscreen) {
+    // iOS Safari Specific
+    video.webkitEnterFullscreen();
+  } else {
+    // Fallback for older browsers
+    if (videoContainer.webkitRequestFullscreen) {
+      videoContainer.webkitRequestFullscreen();
+    }
   }
 });
 

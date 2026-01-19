@@ -1,8 +1,11 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- Viewport Fit Cover for iPhone Notch -->
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>IPTV Player Pro</title>
 
   <!-- PWA -->
@@ -14,19 +17,29 @@
   <!-- Icons & Fonts -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
-  
+
   <link rel="stylesheet" href="style.css" />
 </head>
+
 <body>
 
+  <!-- MOBILE HEADER (Only visible on mobile) -->
+  <header class="mobile-header">
+    <div class="logo-mobile"><i class="fa-solid fa-tv"></i> IPTV PRO</div>
+    <div class="mobile-actions">
+      <!-- Cast button moved here for mobile -->
+      <button id="mobileCastBtn" class="btn-icon" hidden><google-cast-launcher></google-cast-launcher></button>
+    </div>
+  </header>
+
   <div class="app-container">
-    
-    <!-- 1️⃣ Sidebar: Categorías -->
+
+    <!-- 1️⃣ Sidebar: Categorías (Desktop Only) -->
     <nav class="sidebar" id="sidebar">
       <div class="logo">
         <i class="fa-solid fa-tv"></i> IPTV PRO
       </div>
-      
+
       <div class="search-box">
         <i class="fa-solid fa-magnifying-glass"></i>
         <input type="text" id="searchInput" placeholder="Buscar canal..." autocomplete="off" />
@@ -34,11 +47,8 @@
 
       <ul class="category-list" id="categoryList">
         <!-- JS generará <li> aquí -->
-        <li class="active" data-id="">
-          <i class="fa-solid fa-layer-group"></i> Todas
-        </li>
       </ul>
-      
+
       <div class="sidebar-footer">
         <button id="reloadBtn" class="btn-icon" title="Recargar">
           <i class="fa-solid fa-rotate-right"></i>
@@ -48,19 +58,19 @@
 
     <!-- 2️⃣ Main Content -->
     <main class="main-content">
-      
+
       <!-- Video Player Section -->
       <div class="player-wrapper">
         <div class="video-container" id="videoContainer">
           <video id="video" playsinline webkit-playsinline></video>
-          
+
           <!-- Custom Controls Overlay -->
           <div class="controls-overlay" id="controlsOverlay">
             <div class="video-info">
               <h2 id="currentChannelName">Selecciona un canal</h2>
               <p id="currentProgram">Sin información EPG</p>
             </div>
-            
+
             <div class="video-buttons">
               <button id="castBtn" class="control-btn" hidden><google-cast-launcher></google-cast-launcher></button>
               <button id="favToggle" class="control-btn"><i class="fa-regular fa-star"></i></button>
@@ -71,9 +81,14 @@
         </div>
       </div>
 
+      <!-- MOBILE CATEGORIES (Horizontal Pills) -->
+      <div class="mobile-categories" id="mobileCategories">
+        <!-- JS inyectará pills aquí -->
+      </div>
+
       <!-- Channel Grid -->
       <div class="content-body">
-        <h3 id="categoryTitle">Todos los canales</h3>
+        <h3 id="categoryTitle" class="desktop-only">Todos los canales</h3>
         <div class="channel-grid" id="channelGrid">
           <!-- JS generará .channel-card aquí -->
         </div>
@@ -83,10 +98,35 @@
 
   </div>
 
+  <!-- BOTTOM NAVIGATION (Mobile Only) -->
+  <nav class="bottom-nav">
+    <div class="nav-item active" data-tab="home">
+      <i class="fa-solid fa-house"></i>
+      <span>Inicio</span>
+    </div>
+    <div class="nav-item" data-tab="search">
+      <i class="fa-solid fa-magnifying-glass"></i>
+      <span>Buscar</span>
+    </div>
+    <div class="nav-item" data-tab="favs">
+      <i class="fa-solid fa-star"></i>
+      <span>Favoritos</span>
+    </div>
+  </nav>
+
+  <!-- MOBILE SEARCH OVERLAY -->
+  <div id="mobileSearchOverlay" class="mobile-search-overlay">
+    <div class="mobile-search-header">
+      <input type="text" id="mobileSearchInput" placeholder="Busca canales, eventos..." autocomplete="off">
+      <button id="closeSearchBtn">Cancelar</button>
+    </div>
+  </div>
+
   <!-- Scripts -->
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <!-- Chromecast SDK -->
   <script src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"></script>
   <script src="app.js"></script>
 </body>
+
 </html>
